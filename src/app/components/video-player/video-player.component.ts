@@ -3,12 +3,13 @@ import { CommonModule } from '@angular/common';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 import { Router } from '@angular/router';
+import { Observable } from 'rxjs';
+import { VideoService } from '../../services/video.service';
 
 // Define the interface for video quality options
 interface VideoQuality {
   label: string;
   value: string;
-  src: string;
 }
 
 @Component({
@@ -26,24 +27,11 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   // Video.js player instance
   private player: any;
 
-  constructor(private router: Router) { }
+  // Videos array to store fetched videos
+  public videos: any[] = [];
+
+  constructor(private router: Router, private videoService: VideoService) { }
   
-  videos : {
-    title : string,
-    duration : string,
-    thumbnail : string
-  }[] = [
-    {
-        title : "Lesson - 1",
-        duration : "10:30",
-        thumbnail : "assets/thumbnail1.jpg"
-    },
-    {
-        title : "Lesson - 2",
-        duration : "12:00",
-        thumbnail : "assets/thumbnail1.jpg"
-    },
-  ]
 
   // Current video quality
   public currentQuality: string = 'auto';
@@ -51,46 +39,111 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   // Available video qualities with sample URLs
   // In a real application, these would be actual video URLs for different qualities
     BASE_URL = "http://localhost:2000/hls-output/";
-    VIDEO_ID = "687cc300b0d6cf933acc5908";
-  public videoQualities: VideoQuality[] = [
-    {
-      label: 'Auto',
-      value: 'auto',
-      src: this.BASE_URL + this.VIDEO_ID + "/index.m3u8"
-    },
-    {
-      label: '720p',
-      value: '720p',
-      src: `${this.BASE_URL}${this.VIDEO_ID}/720p/index.m3u8` // Same URL for demo
-    },
-    {
-      label: '480p', 
-      value: '480p',
-      src: `${this.BASE_URL}${this.VIDEO_ID}/480p/index.m3u8` // Same URL for demo
-    },
-    {
-      label: '360p',
-      value: '360p', 
-      src: `${this.BASE_URL}${this.VIDEO_ID}/360p/index.m3u8` // Same URL for demo
-    }
-  ];
+    public VIDEO_ID:any = "";
+    public videoQualities: VideoQuality[] =  [
+      {
+        label: 'Auto',
+        value: 'auto'
+      },
+      {
+        label: '720p',
+        value: '720p',
+      },
+      {
+        label: '480p', 
+        value: '480p',
+      },
+      {
+        label: '360p',
+        value: '360p', 
+      }
+    ];
 
   private lastAllowedTime: number = 0;
-
+  progressInterval: any;
+  lastProgress: number = 0;
+  private isResumingFromTimestamp: boolean = false; // Flag to allow timestamp resuming
+  
   ngOnInit(): void {
     // Component initialization logic
     console.log('Video Player Component Initialized');
+    this.videoService.getAllVideos().subscribe(
+      (data: any) => {
+        console.log('Videos:', data);
+        this.videos = data.videos;
+        this.VIDEO_ID = this.videos[0]._id;
+      },
+      (error) => {
+        console.error('Error fetching videos:', error);
+      }
+    );
+
+    // Optional: every 10s you could also autosave
+  this.progressInterval = setInterval(() => {
+    this.sendProgress(); // socket or HTTP
+  }, 10000);
+
+  window.addEventListener('beforeunload', this.handleUnload);
+  window.addEventListener('visibilitychange', this.handleVisibilityChange);
   }
 
+  handleUnload = (event: any) => {
+    this.sendProgress();
+  };
+  
+  handleVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      this.sendProgress();
+    }
+  };
+
   ngAfterViewInit(): void {
-    // Initialize Video.js player after the view is initialized
-    this.initializeVideoPlayer();
+      this.initializeVideoPlayer();
+      console.log("this.VIDEO_ID",this.VIDEO_ID)
   }
 
   ngOnDestroy(): void {
+    // Send final progress before destroying
+    this.sendProgress();
+    
+    // Clear the interval to prevent memory leaks
+    if (this.progressInterval) {
+      clearInterval(this.progressInterval);
+    }
+    
+    // Remove event listeners
+    window.removeEventListener('beforeunload', this.handleUnload);
+    window.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    
     // Clean up the video player when component is destroyed
     if (this.player) {
       this.player.dispose();
+    }
+  }
+
+  sendProgress() {
+    if (!this.VIDEO_ID || !this.player) {
+      return; // Don't send if video ID or player is not available
+    }
+
+    const currentTime = this.player.currentTime();
+    console.log("Sending progress:", currentTime, "for video:", this.VIDEO_ID);
+    
+    if (currentTime > 0) {
+      // Example: socket emit
+      // this.socket.emit('video-progress', {
+      //   videoId: this.VIDEO_ID,
+      //   userId: this.userId,
+      //   progress: currentTime,
+      // });
+      this.videoService.sendVideoProgress(this.VIDEO_ID, currentTime).subscribe(
+        (response) => {
+          console.log('Progress sent successfully:', response);
+        },
+        (error) => {
+          console.error('Error sending progress:', error);
+        }
+      );
     }
   }
 
@@ -100,6 +153,7 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
    */
   private initializeVideoPlayer(): void {
     // Video.js player configuration options
+    
     const playerOptions = {
       controls: true, // Enable default controls
       fluid: true, // Make player responsive
@@ -115,7 +169,8 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
           'progressControl', // Progress bar (seek will be disabled)
           'liveDisplay', // Live indicator
           'remainingTimeDisplay', // Remaining time
-          'customControlSpacer', // Spacer
+          'customControlSpacer', // Spacer,
+          'fullscreenToggle'
         ]
       },
       // Disable seeking functionality
@@ -143,12 +198,29 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
         })
     })
 
-    
     // Set the initial video source
-    this.setVideoSource(this.currentQuality);
+    // this.setVideoSource(this.currentQuality);
+    this.setInitialVideoSource()
 
     // Add event listeners for player events
     this.setupPlayerEventListeners();
+  }
+
+  private setInitialVideoSource(): void {
+    this.videoService.getAllVideos().subscribe(
+      (data: any) => {
+        console.log('Videos:', data);
+        this.VIDEO_ID = data.videos[0]._id;
+        this.setVideoSource(this.currentQuality);
+        if(data.videos[0].timeStamp > 0){
+          this.isResumingFromTimestamp = true;
+          this.player.currentTime(data.videos[0].timeStamp);
+        }
+      },
+      (error) => {
+        console.error('Error fetching videos:', error);
+      }
+    );
   }
 
   /**
@@ -167,11 +239,10 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
     });
 
     //When ended
-    // this.player.on('ended', () => {
-    //   console.log('Video ended');
-    // });
-  
-   
+    this.player.on('ended', () => {
+      console.log('Video ended');
+      this.sendProgress();
+    });
 
     // Listen for loaded metadata
     this.player.on('loadedmetadata', () => {
@@ -185,15 +256,21 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
 
     // Track last allowed time (update only if not seeking)
     this.player.on('timeupdate', () => {
-      if (!this.player.seeking() && this.player.currentTime() > this.lastAllowedTime) {
-        console.log("time updated",this.player.currentTime());
-        
+      this.lastProgress = this.player.currentTime();
+      if (!this.player.seeking() && this.player.currentTime() > this.lastAllowedTime) {        
         this.lastAllowedTime = this.player.currentTime();
       }
     });
 
       // Listen for seeking events and prevent them
       this.player.on('seeking', () => {
+        // Allow resuming from timestamp
+        if (this.isResumingFromTimestamp) {
+          this.isResumingFromTimestamp = false;
+          this.lastAllowedTime = this.player.currentTime();
+          return;
+        }
+        
         // Allow small jumps (e.g., <2s) for HLS logic
         if (this.player.currentTime() > this.lastAllowedTime + 2) {
           this.player.currentTime(this.lastAllowedTime);
@@ -248,17 +325,23 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
    * @param quality - The quality to set
    */
   private setVideoSource(quality: string): void {
-    const selectedQuality = this.videoQualities.find(q => q.value === quality);
+    console.log(quality);
+    let videoUrl = this.BASE_URL + this.VIDEO_ID + "/" + quality + "/index.m3u8";
+    if(quality === "auto"){
+      videoUrl = this.BASE_URL + this.VIDEO_ID + "/index.m3u8";
+    }
+
+    console.log("videoUrl",videoUrl);
     
-    if (selectedQuality) {
+    
       // Set the video source
       this.player.src({
-        src: selectedQuality.src,
+        src: videoUrl,
         type: 'application/x-mpegURL'
       });
       
-      console.log(`Video source set to: ${selectedQuality.src}`);
-    }
+      console.log(`Video source set to: ${videoUrl}`);
+    
   }
 
   /**
@@ -304,4 +387,17 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   public isPlaying(): boolean {
     return this.player ? !this.player.paused() : false;
   }
+
+  public changeVideo(video: any): void {
+    this.VIDEO_ID = video._id;
+    console.log("video id",video._id)
+    // Reinitialize video qualities with the new video ID
+    // this.initializeVideoQualities();
+    this.setVideoSource(this.currentQuality);
+    if(video.timeStamp > 0){
+      this.isResumingFromTimestamp = true;
+      this.player.currentTime(video.timeStamp);
+    }
+  }
+
 } 
