@@ -2,6 +2,7 @@ import { Component, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewInit } fr
 import { CommonModule } from '@angular/common';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
+import { Router } from '@angular/router';
 
 // Define the interface for video quality options
 interface VideoQuality {
@@ -24,6 +25,8 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   
   // Video.js player instance
   private player: any;
+
+  constructor(private router: Router) { }
   
   videos : {
     title : string,
@@ -43,14 +46,18 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   ]
 
   // Current video quality
-  public currentQuality: string = '720p';
+  public currentQuality: string = 'auto';
   
   // Available video qualities with sample URLs
   // In a real application, these would be actual video URLs for different qualities
-    BASE_URL = "http://localhost:3000/hls-output/";
-    VIDEO_ID = "faf3446e-0882-4c89-a1ff-90229c09ae19";
-
+    BASE_URL = "http://localhost:2000/hls-output/";
+    VIDEO_ID = "687cc300b0d6cf933acc5908";
   public videoQualities: VideoQuality[] = [
+    {
+      label: 'Auto',
+      value: 'auto',
+      src: this.BASE_URL + this.VIDEO_ID + "/index.m3u8"
+    },
     {
       label: '720p',
       value: '720p',
@@ -69,8 +76,6 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   ];
 
   private lastAllowedTime: number = 0;
-
-  constructor() { }
 
   ngOnInit(): void {
     // Component initialization logic
@@ -111,8 +116,6 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
           'liveDisplay', // Live indicator
           'remainingTimeDisplay', // Remaining time
           'customControlSpacer', // Spacer
-          'qualitySelector', // Custom quality selector (we'll add this)
-          'fullscreenToggle' // Fullscreen button
         ]
       },
       // Disable seeking functionality
@@ -139,6 +142,8 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
             }
         })
     })
+
+    
     // Set the initial video source
     this.setVideoSource(this.currentQuality);
 
@@ -160,7 +165,13 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
     this.player.on('pause', () => {
       console.log('Video paused');
     });
+
+    //When ended
+    // this.player.on('ended', () => {
+    //   console.log('Video ended');
+    // });
   
+   
 
     // Listen for loaded metadata
     this.player.on('loadedmetadata', () => {
