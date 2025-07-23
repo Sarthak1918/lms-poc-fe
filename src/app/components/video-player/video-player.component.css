@@ -25,4 +25,6 @@
   height: 400px !important;
   border-radius: 8px;
 }
-
+.video-js .vjs-control.vjs-visible-text {
+  color: burlywood !important;
+}

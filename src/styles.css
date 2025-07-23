@@ -1,2 +1,78 @@
 /* You can add global styles to this file, and also import other style files */
 @import "tailwindcss";
+
+.video-js .vjs-control {
+ cursor: pointer !important;
+}
+
+.video-js .vjs-control.vjs-visible-text.active {
+  color: burlywood !important;
+  background-color: #000000 !important;
+}
+
+/* --- Video Player Custom Settings Button and Quality Menu --- */
+.vjs-setting-button {
+  position: relative;
+  background: none !important;
+  border: none !important;
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.vjs-control.vjs-button.vjs-setting-button{
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* .vjs-setting-button .vjs-icon-cog {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+} */
+
+.vjs-quality-menu {
+  position: absolute;
+  bottom: 48px;
+  right: 0;
+  background: #23272f;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+  padding: 12px 0;
+  min-width: 120px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  opacity: 1;
+  transition: opacity 0.2s;
+}
+
+.vjs-quality-menu.vjs-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.vjs-quality-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  padding: 10px 24px;
+  text-align: left;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  outline: none;
+}
+
+.vjs-quality-btn.active,
+.vjs-quality-btn:hover {
+  background: #444b58;
+  color: #ffd700;
+}
+
+/* --- End Video Player Custom Settings Button and Quality Menu --- */

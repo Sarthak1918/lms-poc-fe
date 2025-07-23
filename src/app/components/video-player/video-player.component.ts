@@ -29,6 +29,9 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
 
   // Videos array to store fetched videos
   public videos: any[] = [];
+  public courseName: string = "";
+  public sectionName: string = "";
+  public title: string = "";
 
   constructor(private router: Router, private videoService: VideoService) { }
   
@@ -38,7 +41,8 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   
   // Available video qualities with sample URLs
   // In a real application, these would be actual video URLs for different qualities
-    BASE_URL = "http://localhost:2000/hls-output/";
+    // BASE_URL = "http://localhost:2000/hls-output/";
+    public BASE_URL = "";
     public VIDEO_ID:any = "";
     public videoQualities: VideoQuality[] =  [
       {
@@ -67,21 +71,11 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnInit(): void {
     // Component initialization logic
     console.log('Video Player Component Initialized');
-    this.videoService.getAllVideos().subscribe(
-      (data: any) => {
-        console.log('Videos:', data);
-        this.videos = data.videos;
-        this.VIDEO_ID = this.videos[0]._id;
-      },
-      (error) => {
-        console.error('Error fetching videos:', error);
-      }
-    );
-
     // Optional: every 10s you could also autosave
-  this.progressInterval = setInterval(() => {
-    this.sendProgress(); // socket or HTTP
-  }, 10000);
+  // this.progressInterval = setInterval(() => {
+  //   console.log("sending progress");
+  //   this.sendProgress(); // socket or HTTP
+  // }, 10000);
 
   window.addEventListener('beforeunload', this.handleUnload);
   window.addEventListener('visibilitychange', this.handleVisibilityChange);
@@ -122,7 +116,7 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   sendProgress() {
-    if (!this.VIDEO_ID || !this.player) {
+    if (!this.player || this.player.paused()) {
       return; // Don't send if video ID or player is not available
     }
 
@@ -153,6 +147,8 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
    */
   private initializeVideoPlayer(): void {
     // Video.js player configuration options
+
+    
     
     const playerOptions = {
       controls: true, // Enable default controls
@@ -188,19 +184,79 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
 
     // Initialize the Video.js player
     this.player = videojs(this.videoElement.nativeElement, playerOptions);
-    this.videoQualities.forEach(quality => {
-        this.player.getChild('ControlBar').addChild('button',{
-            controlText: quality.label,
-            className : "vjs-visible-text",
-            clickHandler: () => {
-                this.changeQuality(quality.value);
+    // --- Custom Settings Button and Quality Menu ---
+    const Button = videojs.getComponent('Button');
+    const Component = videojs.getComponent('Component');
+    const self = this;
+
+    // Custom Quality Menu
+    class QualityMenu extends Component {
+      settingsButtonRef: any;
+      constructor(player: any, options?: any) {
+        super(player, options);
+        this.addClass('vjs-quality-menu');
+        this.hide();
+        // Render quality buttons
+        this.updateMenu();
+        // Click handler for quality buttons
+        this.el().addEventListener('click', (e: Event) => {
+          const target = e.target as HTMLElement;
+          if (target && target.classList.contains('vjs-quality-btn')) {
+            const quality = target.getAttribute('data-quality');
+            self.changeQuality(quality!);
+            // Update active state
+            this.updateMenu();
+            this.hide(); // Hide menu after selection
+            // Also set menuVisible to false on the button
+            if (this.settingsButtonRef) {
+              this.settingsButtonRef.menuVisible = false;
             }
-        })
-    })
+          }
+        });
+      }
+      updateMenu() {
+        this.el().innerHTML = self.videoQualities.map(q =>
+          `<button class="vjs-quality-btn${self.currentQuality === q.value ? ' active' : ''}" data-quality="${q.value}">${q.label}</button>`
+        ).join('');
+      }
+    }
+    videojs.registerComponent('QualityMenu', QualityMenu);
+
+    // Custom Settings Button
+    class SettingsButton extends Button {
+      menuVisible: boolean = false;
+      menuComponent: any;
+      constructor(player: any, options?: any) {
+        super(player, options);
+        (this as any).controlText('Settings');
+        this.addClass('vjs-setting-button');
+        this.el().innerHTML = '<img src="assets/settings.svg" alt="Settings" class="h-[14px] w-[14px]">';
+        this.menuVisible = false;
+        this.menuComponent = new QualityMenu(player);
+        this.menuComponent.settingsButtonRef = this;
+        player.el().appendChild(this.menuComponent.el());
+      }
+      handleClick() {
+        this.menuVisible = !this.menuVisible;
+        if (this.menuVisible) {
+          this.menuComponent.updateMenu();
+          this.menuComponent.show();
+        } else {
+          this.menuComponent.hide();
+        }
+      }
+    }
+    videojs.registerComponent('SettingsButton', SettingsButton);
+
+    // Add the settings button to the control bar (before fullscreen toggle)
+    this.player.getChild('ControlBar').addChild('SettingsButton', {}, this.player.getChild('ControlBar').children().length - 1);
+    // --- End Custom Settings Button and Quality Menu ---
 
     // Set the initial video source
     // this.setVideoSource(this.currentQuality);
     this.setInitialVideoSource()
+
+    
 
     // Add event listeners for player events
     this.setupPlayerEventListeners();
@@ -210,7 +266,10 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
     this.videoService.getAllVideos().subscribe(
       (data: any) => {
         console.log('Videos:', data);
+        this.videos = data.videos;
         this.VIDEO_ID = data.videos[0]._id;
+        this.BASE_URL = data.videos[0].videoUrl;
+        console.log("this.BASE_URL",this.BASE_URL);
         this.setVideoSource(this.currentQuality);
         if(data.videos[0].timeStamp > 0){
           this.isResumingFromTimestamp = true;
@@ -294,8 +353,7 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
    * @param quality - The quality to switch to (360p, 480p, 720p)
    */
   public changeQuality(quality: string): void {
-    console.log(`Changing quality to: ${quality}`);
-    
+    console.log(`Changing quality to: ${quality}`);    
     // Store current playback time
     const currentTime = this.player.currentTime();
     const wasPlaying = !this.player.paused();
@@ -326,10 +384,16 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
    */
   private setVideoSource(quality: string): void {
     console.log(quality);
-    let videoUrl = this.BASE_URL + this.VIDEO_ID + "/" + quality + "/index.m3u8";
+    let videoUrl = "";
+    console.log("this.BASE_URL",this.BASE_URL);
+  
     if(quality === "auto"){
-      videoUrl = this.BASE_URL + this.VIDEO_ID + "/index.m3u8";
+      videoUrl = this.BASE_URL;
     }
+    else{
+      videoUrl = this.BASE_URL.slice(0, -('/index.m3u8'.length)) + "/" + quality + "/index.m3u8";
+    }
+
 
     console.log("videoUrl",videoUrl);
     
@@ -389,10 +453,10 @@ export class VideoPlayerComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   public changeVideo(video: any): void {
+    console.log("changeVideo video ====>",video);
+    this.BASE_URL = video.videoUrl;
     this.VIDEO_ID = video._id;
     console.log("video id",video._id)
-    // Reinitialize video qualities with the new video ID
-    // this.initializeVideoQualities();
     this.setVideoSource(this.currentQuality);
     if(video.timeStamp > 0){
       this.isResumingFromTimestamp = true;
